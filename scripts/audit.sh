@@ -60,5 +60,17 @@ WW_FILES="$(find /var/www/devops-site -perm -o+w 2>/dev/null | wc -l)"
 check "В каталоге ресурса нет файлов, доступных на запись всем" "0" "${WW_FILES// /}"
 check "Права закрытого ключа TLS равны 600" "600" "$(sudo stat -c '%a' /etc/ssl/private/devops.key)"
 
+echo "[5] Контейнеризация"
+check "Служба docker активна" "active" "$(systemctl is-active docker)"
+check "Контейнер СУБД в состоянии healthy" "healthy" \
+      "$(docker inspect -f '{{.State.Health.Status}}' app-db-1 2>/dev/null || echo 'not-found')"
+
+BAD_PORTS="$(ss -tln | awk 'NR>1 {print $4}' | grep -E ':(5000|5432)$' \
+             | grep -vE '^(127\.0\.0\.1|\[::1\]):' | wc -l)"
+check "Порты 5000 и 5432 не опубликованы вне 127.0.0.1" "0" "${BAD_PORTS// /}"
+
+check "Права файла ~/app/.env равны 600" "600" \
+      "$(stat -c '%a' "${HOME}/app/.env" 2>/dev/null || echo 'absent')"
+
 echo "Пройдено: $PASS, не пройдено: $FAIL"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

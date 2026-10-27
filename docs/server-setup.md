@@ -156,6 +156,7 @@ sudo ufw logging medium
 | `02-keys-configured` | после настройки ключевой аутентификации и файла `~/.ssh/config` (ПР № 5, задание 1) |
 | `03-ssh-hardened` | после применения `99-hardening.conf`, смены порта на 2222 и проверок отказа (ПР № 5, задание 2) |
 | `04-nginx-https` | после публикации ресурса по HTTPS и доставки содержимого средствами rsync (ПР № 6) |
+| `05-docker-compose` | после запуска проекта «приложение + СУБД» и публикации через Nginx (ПР № 7) |
 
 Снимки создаются в менеджере снимков VirtualBox при выключенной гостевой системе
 (`sudo poweroff`) либо в работающем состоянии без сохранения состояния ОЗУ.
@@ -187,3 +188,32 @@ sudo ufw logging medium
 
 Доставка содержимого: `scripts/deploy.sh` (rsync, `--delete --chmod=D755,F644`,
 одно SSH-соединение на запуск).
+
+## 9. Контейнеризация
+
+| Параметр | Значение |
+| --- | --- |
+| Способ установки Docker Engine | официальный репозиторий `download.docker.com` по инструкции docs.docker.com/engine/install/ubuntu; пакет `docker.io` не использовался |
+| Версия | Docker Engine 27.3.1, Compose plugin v2.29.7 (`docker version`, `docker compose version`) |
+| Участники группы `docker` | `devops` (учётные записи без права `sudo` в группу не включаются) |
+| Расположение проекта | `/home/devops/app` (доставка `rsync app/ devops:app/` с `--exclude=.env`) |
+| Файл переменных | `/home/devops/app/.env`, владелец `devops`, права `600`; шаблон `.env.example` в репозитории, `.env` в `.gitignore` и `.dockerignore` |
+| Публикуемый порт | `127.0.0.1:5000:5000` — только обратный прокси на той же машине |
+| Порт СУБД | не публикуется, доступен только в сети проекта `app_backend` |
+| Именованный том | `app_db_data` → `/var/lib/postgresql/data` |
+| Обратный прокси | `location /app/` → `proxy_pass http://127.0.0.1:5000/` с заголовками `Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto` |
+| Образ приложения | `devops-app:1.0`, базовый `python:3.12-slim`, процесс от имени `app` (UID системный) |
+
+Порядок восстановления:
+
+```
+sudo usermod -aG docker devops          # затем новая SSH-сессия
+cd ~/app
+cp .env.example .env && chmod 600 .env
+sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 16)/" .env
+docker compose up -d --build
+docker compose ps                       # db — healthy, app — running
+```
+
+Проверка: `docker compose exec app id` (не root), `sudo ss -tlnp | grep -E ':(5000|5432)'`
+(только `127.0.0.1:5000`), `curl --cacert ~/devops.crt https://devops.local/app/`.
