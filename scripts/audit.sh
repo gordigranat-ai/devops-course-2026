@@ -46,5 +46,19 @@ check "Политика по умолчанию для входящего тра
 echo "[3] Учётные записи"
 awk -F: '$3>=1000 && $3<65534 {printf "    %s (uid=%s)\n",$1,$3}' /etc/passwd
 
+echo "[4] Веб-сервер"
+check "Служба nginx активна" "active" "$(systemctl is-active nginx)"
+
+if sudo nginx -t >/dev/null 2>&1; then NGINX_T=0; else NGINX_T=1; fi
+check "Конфигурация nginx синтаксически корректна" "0" "${NGINX_T}"
+
+if sudo openssl x509 -checkend "${CERT_MIN_SECONDS}" -noout \
+        -in /etc/ssl/certs/devops.crt >/dev/null 2>&1; then CERT_OK=0; else CERT_OK=1; fi
+check "Сертификат действителен не менее ${CERT_MIN_DAYS} дн." "0" "${CERT_OK}"
+
+WW_FILES="$(find /var/www/devops-site -perm -o+w 2>/dev/null | wc -l)"
+check "В каталоге ресурса нет файлов, доступных на запись всем" "0" "${WW_FILES// /}"
+check "Права закрытого ключа TLS равны 600" "600" "$(sudo stat -c '%a' /etc/ssl/private/devops.key)"
+
 echo "Пройдено: $PASS, не пройдено: $FAIL"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

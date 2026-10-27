@@ -155,6 +155,35 @@ sudo ufw logging medium
 | `01-clean-install` | после установки ОС, обновления пакетов и проверки сети, до создания учётной записи `devops` |
 | `02-keys-configured` | после настройки ключевой аутентификации и файла `~/.ssh/config` (ПР № 5, задание 1) |
 | `03-ssh-hardened` | после применения `99-hardening.conf`, смены порта на 2222 и проверок отказа (ПР № 5, задание 2) |
+| `04-nginx-https` | после публикации ресурса по HTTPS и доставки содержимого средствами rsync (ПР № 6) |
 
 Снимки создаются в менеджере снимков VirtualBox при выключенной гостевой системе
 (`sudo poweroff`) либо в работающем состоянии без сохранения состояния ОЗУ.
+
+## 8. Веб-сервер
+
+| Параметр | Значение |
+| --- | --- |
+| Пакет | `nginx` (1.24.0 из репозитория Ubuntu 24.04) |
+| Конфигурация ресурса | `/etc/nginx/sites-available/devops-site` (символическая ссылка в `sites-enabled/`) |
+| Стандартный ресурс | отключён: `/etc/nginx/sites-enabled/default` удалён |
+| Каталог ресурса | `/var/www/devops-site`, владелец `devops:devops`, каталоги `755`, файлы `644` |
+| Сертификат | `/etc/ssl/certs/devops.crt`, владелец `root:root`, права `644` |
+| Закрытый ключ | `/etc/ssl/private/devops.key`, владелец `root:root`, права `600` |
+| Срок действия сертификата | 365 дней с даты выпуска |
+| Команда выпуска | `sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/devops.key -out /etc/ssl/certs/devops.crt -subj "/CN=devops.local" -addext "subjectAltName=DNS:devops.local"` |
+| Журналы | `/var/log/nginx/devops-site.access.log`, `/var/log/nginx/devops-site.error.log` |
+| Проверка синтаксиса | `sudo nginx -t` |
+| Применение | `sudo systemctl reload nginx` |
+
+Конфигурация содержит два блока: перенаправление `80 → 443` (код 301) и блок
+`443 ssl` с `ssl_protocols TLSv1.2 TLSv1.3`, статическим ресурсом и расположением
+`/app/` для обратного проксирования (раздел 9). Копия конфигурации хранится в
+репозитории: `deploy/nginx/devops-site.conf`.
+
+Доверие к самоподписанному сертификату на хостовой системе обеспечено копией
+`~/devops.crt`, полученной по SSH-каналу; проверка —
+`curl --cacert ~/devops.crt -I https://devops.local`.
+
+Доставка содержимого: `scripts/deploy.sh` (rsync, `--delete --chmod=D755,F644`,
+одно SSH-соединение на запуск).
