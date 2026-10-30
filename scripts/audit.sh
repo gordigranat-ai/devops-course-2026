@@ -72,5 +72,18 @@ check "Порты 5000 и 5432 не опубликованы вне 127.0.0.1" "
 check "Права файла ~/app/.env равны 600" "600" \
       "$(stat -c '%a' "${HOME}/app/.env" 2>/dev/null || echo 'absent')"
 
+echo "[6] Контрольная работа № 2"
+REDIS_CID="$(cd ~/kr2 && docker compose ps -q redis 2>/dev/null)"
+check "Контейнер Redis в состоянии healthy" "healthy" \
+      "$(docker inspect -f '{{.State.Health.Status}}' "${REDIS_CID}" 2>/dev/null || echo 'not-found')"
+check "Порт 8002 опубликован только на 127.0.0.1" "127.0.0.1:8002" \
+      "$(cd ~/kr2 && docker compose port app 8002 2>/dev/null | awk '{print $1}')"
+check "Права файла ~/kr2/.env равны 600" "600" \
+      "$(stat -c '%a' "${HOME}/kr2/.env" 2>/dev/null || echo 'absent')"
+if sudo openssl x509 -checkend 2592000 -noout -in /etc/ssl/certs/kr2.crt >/dev/null 2>&1; then KR2_CERT=0; else KR2_CERT=1; fi
+check "Сертификат kr2 действителен не менее 30 дн." "0" "${KR2_CERT}"
+check "Ресурс kr2 активирован символической ссылкой" "yes" \
+      "$([[ -L /etc/nginx/sites-enabled/kr2 ]] && echo yes || echo no)"
+
 echo "Пройдено: $PASS, не пройдено: $FAIL"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1
